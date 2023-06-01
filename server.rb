@@ -1,22 +1,45 @@
-require "packetgen"
 require "socket"
 require "openssl"
 require "rb_tuntap"
 require "thread"
 require "logger"
+require "timeout"
+require "json"
+require "ipaddress"
 
 if Process.uid != 0
-        puts "Please run the client as a root user!"
+        puts "** Please run the client as a root user!"
         exit 130
 end
 
+if ARGV.empty?
+        puts "Please include the config name"
+        puts
+        puts "Example: ruby server.rb config.json"
+        exit 130
+end
+
+if !File.exist?(ARGV[0])
+        puts "** Config file not found!"
+        exit 130
+end
+
+CONFIG = JSON.parse(File.read(ARGV[0]))
 LOG = Logger.new(STDOUT)
-PORT = 9578
-MAX_BUFFER = 1024 * 640
-DEV_MAIN_INTERFACE = PacketGen.default_iface
-DEV_NAME = "tun0"
-DEV_ADDR = "192.168.0.1"
-DEV_NETMASK = "255.255.255.0"
+PORT = CONFIG["port"]
+MAX_BUFFER = CONFIG["max_buffer"]
+DEV_MAIN_INTERFACE = CONFIG["interface"]
+DEV_NAME = CONFIG["tun_interface"]
+NETWORK = IPAddress(CONFIG["network"])
+DEV_NETMASK = NETWORK.netmask
+DEV_ADDR = NETWORK.first.to_s
+
+LEASED_ADDRESSES = {} # All clients are gonna be here
+
+STATUS = {
+        :UNAUTHORIZED => "STATUS_UA",
+        :AUTHORIZED   => "STATUS_OK"
+}
 
 SSL = {
          :SSLClientCA=>nil,
@@ -51,6 +74,12 @@ def close_tun(tun)
         exit 130
 end
 
+def setup_forwarding()
+        `echo 1 > /proc/sys/net/ipv4/ip_forward`
+        `iptables -t nat -A POSTROUTING -o #{DEV_MAIN_INTERFACE} -j MASQUERADE`
+        `iptables -A FORWARD -i #{DEV_NAME} -j ACCEPT`
+end
+
 def setup_tun()
         tun = RbTunTap::TunDevice.new(DEV_NAME) # DEV_NAME = 'tun0'
         tun.open(true)
@@ -63,17 +92,31 @@ def setup_tun()
         tun.netmask = DEV_NETMASK
         tun.up
         LOG.info("** #{DEV_NAME} device is up")
-        `echo 1 > /proc/sys/net/ipv4/ip_forward`
-        `iptables -t nat -A POSTROUTING -o #{DEV_MAIN_INTERFACE} -j MASQUERADE`
-        `iptables -A FORWARD -i #{DEV_NAME} -j ACCEPT`
         return tun
 end
 
 socket = TCPServer.new(PORT)
-sslServer = OpenSSL::SSL::SSLServer.new(socket, sslContext)
-
 LOG.debug("** Listening on #{PORT}")
 
+def lease_address(client, client_address)
+        free_addresses = NETWORK.to_a[2...-1].reject { |x| LEASED_ADDRESSES.include?(x.to_s) }
+        random_address = free_addresses.sample.to_s
+        LEASED_ADDRESSES.merge!(random_address => client_address)
+        client.puts(random_address + "/" + DEV_NETMASK) # the address is sent in the form of (address/netmask), example -> 192.168.0.10/255.255.255.0
+        LOG.info("** Address #{random_address} is now leased by #{client_address}")
+end
+
+def free_address(client_address)
+        LEASED_ADDRESSES.delete_if{|k,v| v == client_address}
+        LOG.info("** Deleted #{client_address} record.")
+end
+
+def handle_authentication(client)
+        credentials = client.gets
+        login, password = credentials.split(":").map(&:chomp) # the credentials are received in the form of (login:password)
+        return true if login == CONFIG["login"] && password == CONFIG["password"] 
+        return false
+end
 
 def handle_connection(client, tun)
                 loop do
@@ -89,16 +132,37 @@ def handle_connection(client, tun)
 
 end
 
-tun = setup_tun()
+tun = setup_tun() # setup the tun interface 
+setup_forwarding() # setup the NAT and forwarding
 
 loop do
-        Thread.new(sslServer.accept) do |client|
+        Thread.new(socket.accept) do |connection|
                 begin
-                        LOG.info("** New client is connected")
-                        handle_connection(client, tun)
+                                connection_address = connection.peeraddr[3]
+                        LOG.info("** New client is connected => #{connection_address}")
+                        tls   = OpenSSL::SSL::SSLSocket.new(connection, sslContext)
+                        tls_connection = nil
+                        Timeout.timeout(10) do
+                                tls_connection = tls.accept # timeout for the tls accept
+                        end
+                        if tls_connection
+                                authorized = handle_authentication(tls_connection) # handle the auth stuff
+                                if authorized
+                                        lease_address(tls_connection, connection_address) # we act like a DHCP server by leasing addresses to the clients 
+                                        handle_connection(tls_connection, tun) # just do the tunneling stuff
+                                else
+                                        connection.close if connection # close the connection in case the credentials are wrong
+                                end
+                        end
+                rescue Timeout::Error
+                        if connection && tls.state == "PINIT"
+                                connection.close if connection# close the connection if no ssl handshake was made (state -> PINIT and the TCP connection is still alive)
+                        end
                 rescue => e
-                        puts "[ERR] Unexpected disconnect, closing the connection... #{e}"
-                        client.close if client
+                        LOG.info("** Fatal error, closing the connection... #{e}")
+                        free_address(connection_address) # free up the lease space
+                        connection.close if connection# close the connection in case of the disconnect
+                        
                 end
         end
 end

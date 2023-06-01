@@ -5,9 +5,10 @@ require "packetgen"
 require "socket"
 require "openssl"
 require "logger"
+require "ipaddress"
 
 if Process.uid != 0
-	puts "Please run the client as a root user!"
+	puts "** Please run the client as a root user!"
 	exit 130
 end
 
@@ -15,14 +16,12 @@ LOG = Logger.new(STDOUT)
 DEV_MAIN_INTERFACE = PacketGen.default_iface #wlan0
 DEV_MAIN_INTERFACE_DEFAULT_ROUTE = `ip route show default`.strip.split[2] #172.16.8.1
 DEV_NAME = 'tun0'
-DEV_ADDR = '192.168.0.2'
-DEV_NETMASK = '255.255.255.0'
 VPN_SERVER_IP = '167.99.236.107'
 VPN_SERVER_PORT = 9578
 SNI_HOST = "example.com"
 MAX_BUFFER = 1024 * 640
 
-def setup_tun()
+def setup_tun(dev_addr, dev_netmask)
 	LOG.info("** Opening tun device as #{DEV_NAME}")
 	tun = RbTunTap::TunDevice.new(DEV_NAME) # DEV_NAME = 'tun0'
 	tun.open(true)
@@ -31,9 +30,9 @@ def setup_tun()
 		close_tun(tun)
 	end
 
-	LOG.info("** Assigning ip #{DEV_ADDR} to device")
-	tun.addr    = DEV_ADDR
-	tun.netmask = DEV_NETMASK
+	LOG.info("** Assigning ip #{dev_addr} to device")
+	tun.addr    = dev_addr
+	tun.netmask = dev_netmask
 	tun.up
 
 	LOG.info("** set #{DEV_NAME} up")
@@ -51,13 +50,26 @@ def close_tun(tun)
 		exit 130
 end
 
-def setup_routes()
+def setup_routes(dev_addr)
 	LOG.info("** Setting up routes")
 	`ip route add #{VPN_SERVER_IP} via #{DEV_MAIN_INTERFACE_DEFAULT_ROUTE} dev #{DEV_MAIN_INTERFACE}`
 	`ip route del default`
-	`ip route add default via #{DEV_ADDR} dev #{DEV_NAME}`
-	LOG.info("** #{DEV_ADDR}/#{DEV_NETMASK} dev #{DEV_NAME}")
+	`ip route add default via #{dev_addr} dev #{DEV_NAME}`
+	LOG.info("** Default via #{dev_addr} dev #{DEV_NAME}")
 	LOG.info("** Done!")
+end
+
+def client_authorize(connection)
+	connection.puts("ryuk:123456789") # login and password 
+	return false if connection.eof?
+	return true
+end
+
+def lease_address(connection)
+	addr = connection.gets.chomp
+	dev_addr, dev_netmask = addr.split("/")
+	LOG.info("** Got #{addr} from the VPN server!")
+	return [dev_addr, dev_netmask]
 end
 
 def setup_connection()
@@ -70,19 +82,26 @@ def setup_connection()
 		ssl.hostname = SNI_HOST
 		ssl.sync_close = true
 		ssl.connect 
+		LOG.info("** Current TLS/SSL version: #{ssl.ssl_version}")
 	rescue => e
-		LOG.info("Can't establish connection with VPN server! #{e}")
+		LOG.info("** Can't establish connection with VPN server! #{e}")
 		return nil
 	end
 	return ssl
 end
 
-
-
-tun = setup_tun()
-setup_routes()
 connection = setup_connection()
-close_tun(tun) if connection.nil?
+exit 130 if connection.nil?
+
+authorized = client_authorize(connection)
+if !authorized
+	LOG.info("** Unauthorized, check your credentials!")
+	exit 130
+end
+
+dev_addr, dev_netmask = lease_address(connection)
+tun = setup_tun(dev_addr, dev_netmask)
+setup_routes(dev_addr)
 
 begin
 	loop do
@@ -95,7 +114,8 @@ begin
 			tun.to_io.syswrite(buf)
 		end
 	end
-rescue
+rescue => e
+	puts e
 	close_tun(tun)
 end
 
