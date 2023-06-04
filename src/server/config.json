@@ -1,0 +1,10 @@
+{
+        "name": "My config",
+        "network": "192.168.0.0/24",
+        "interface": "eth0",
+        "tun_interface": "tun0",
+        "max_buffer": 655360,
+        "port": 9578,
+        "login": "ryuk",
+        "password": "123456789"
+}
