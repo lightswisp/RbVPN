@@ -7,8 +7,6 @@ It uses tun/tap driver to capture all traffic and tunnel it via secured tunnel.
 
 I used GTK3 for the GUI and rb_tuntap for tun/tap interface manipulation. And a bit of iptables rules for NAT. 
 
-Configs must be stored in json format only! Example configs are already present inside the src/client and src/server
-
 
 ## Demo
 
@@ -19,28 +17,61 @@ Configs must be stored in json format only! Example configs are already present 
 
 - Ruby
 - bundler (gem)
-- build-essential
 - ruby-dev
+- build-essential
 
 ## Installation
 
 ### Server
 
+Don't forget to create your config file! 
+
+For the cert.pem and key.pem run: ```openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 365 ```
+- Config Example
+```
+{
+        "certificate": "cert.pem",
+        "private_key": "key.pem",
+        "network": "192.168.0.0/24",
+        "interface": "eth0",
+        "tun_interface": "tun0",
+        "max_buffer": 655360,
+        "port": 9578,
+        "login": "ryuk",
+        "password": "123456789"
+}
+```
+- Installation
 ```bash
+sudo apt update && sudo apt install -y ruby ruby-dev build-essential
 git clone https://github.com/lightswisp/RbVPN.git
 cd RbVPN
-bundle install
-cd src/server
-ruby server.rb config.json
+sudo bundle install
+cd bin/
+./server -c config.json -v
 ```
 
 ### Client
-
+- Config Example
+```
+{
+        "interface": "wlan0",
+        "tun_interface": "tun0",
+        "max_buffer": 655360,
+        "ip": "167.99.236.107",
+        "sni_host": "example.com",
+        "port": 9578,
+        "login": "ryuk",
+        "password": "123456789"
+}
+```
+- Installation
 ```bash
+sudo apt update && sudo apt install -y ruby ruby-dev build-essential
 git clone https://github.com/lightswisp/RbVPN.git
 cd RbVPN
-bundle install
-cd src/client
-ruby client.rb
+sudo bundle install
+cd bin/
+./client
 ```
     
