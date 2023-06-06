@@ -22,6 +22,10 @@ class VPNClient
 		@tun = nil
 	end
 
+	def is_connected?
+		return @connected
+	end
+
 	def setup_tun(dev_addr, dev_netmask)
 		@status.add_status "Status: Opening tun device as #{@dev_name}"
 		tun = RbTunTap::TunDevice.new(@dev_name)
@@ -102,7 +106,8 @@ class VPNClient
 		begin
 		Thread.new do
 				loop do
-					if !@connected
+					if !@connected || @tun.closed?
+						break
 						Thread.exit 
 					end
 					fds = IO.select([@tun.to_io, connection])
@@ -124,8 +129,8 @@ class VPNClient
 
 	def disconnect()
 		@connected = false
-		sleep 1
 		@status.add_status "Status: Bringing down #{@dev_name}"
+		sleep 1 
 		if @tun.opened?
 			@tun.down
 			@tun.close

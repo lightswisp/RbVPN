@@ -11,6 +11,7 @@
     <property name="resizable">False</property>
     <property name="default-width">480</property>
     <property name="default-height">250</property>
+    <property name="icon">icon.ico</property>
     <child>
       <object class="GtkBox">
         <property name="visible">True</property>

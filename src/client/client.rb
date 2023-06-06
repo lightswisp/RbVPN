@@ -8,14 +8,14 @@ end
 require "gtk3"
 require "json"
 require "net/http"
-require_relative "vpn"
-require_relative "status"
+require_relative "utils/vpn"
+require_relative "utils/status"
 
 client = nil
 config_json = nil
 public_ip = Net::HTTP.get URI "https://api.ipify.org"
 
-builder_file = "#{File.expand_path(File.dirname(__FILE__))}/main.ui"
+builder_file = "#{File.expand_path(File.dirname(__FILE__))}/ui/main.ui"
 builder = Gtk::Builder.new(:file => builder_file)
 
 status = builder.get_object("status")
@@ -31,12 +31,14 @@ status_manager.start
 
 
 window.signal_connect("destroy") do 
-	client.disconnect() if client
+	client.disconnect() if client && client.is_connected?
 	Gtk.main_quit 
 end
+
 trap "SIGINT" do
-	client.disconnect() if client
-	Gtk.main_quit 
+	client.disconnect() if client && client.is_connected?
+	Gtk.main_quit
+	exit 130
 end
 
 switch.signal_connect("state-set") do |widget, state|

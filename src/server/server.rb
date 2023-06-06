@@ -6,26 +6,43 @@ require "logger"
 require "timeout"
 require "json"
 require "ipaddress"
+require "optparse"
+require "net/http"
 
 if Process.uid != 0
         puts "** Please run the client as a root user!"
         exit 130
 end
 
-if ARGV.empty?
-        puts "Please include the config name"
-        puts
-        puts "Example: ruby server.rb config.json"
-        exit 130
-end
-
-if !File.exist?(ARGV[0])
-        puts "** Config file not found!"
-        exit 130
-end
-
-CONFIG = JSON.parse(File.read(ARGV[0]))
 LOG = Logger.new(STDOUT)
+ARGV << '-h' if ARGV.empty?
+OPTIONS = {}
+PARSER = OptionParser.new do |opts|
+        opts.banner = "RbVPN Tunnel Server\n\n" + "Usage: ruby server.rb [OPTIONS]"
+                opts.on("-v", "--verbose", "Run verbosely") do |v|
+                OPTIONS[:verbose] = v
+        end
+
+        opts.on("-h", "--help", "Prints help") do
+                puts opts
+                exit
+        end
+
+        opts.on("-c", "--config CONFIG", "Config file (json format), example: ruby server.rb --config config.json") do |config|
+                OPTIONS[:config] = config
+        end
+        
+end.parse!
+
+if !OPTIONS[:config] || !File.exist?(OPTIONS[:config])
+        LOG.info "** Config file not found!"
+        exit 130
+end
+
+PUBLIC_IP = Net::HTTP.get URI "https://api.ipify.org"
+CONFIG = JSON.parse(File.read(OPTIONS[:config]))
+CERTIFICATE = CONFIG["certificate"]
+PRIVATE_KEY = CONFIG["private_key"]
 PORT = CONFIG["port"]
 MAX_BUFFER = CONFIG["max_buffer"]
 DEV_MAIN_INTERFACE = CONFIG["interface"]
@@ -42,26 +59,15 @@ STATUS = {
 }
 
 SSL = {
-         :SSLClientCA=>nil,
-         :SSLExtraChainCert=>nil,                         
-         :SSLCACertificateFile=>nil,                      
-         :SSLCACertificatePath=>nil,                      
-         :SSLCertificateStore=>nil,                       
-         :SSLTmpDhCallback=>nil,                          
          :SSLVerifyClient=>OpenSSL::SSL::VERIFY_PEER,                             
          :SSLVerifyDepth=>5,                            
-         :SSLVerifyCallback=>nil,
-         :SSLTimeout=>10,                                
-         :SSLOPTIONS=>nil,                                
-         :SSLCiphers=>nil,                                
-         :SSLStartImmediately=>true,                      
-         :SSLCertName=>nil,   
+         :SSLTimeout=>10,                                  
          :SSLVer=>OpenSSL::SSL::TLS1_3_VERSION 
 }
 
 sslContext  = OpenSSL::SSL::SSLContext.new()
-sslContext.cert             = OpenSSL::X509::Certificate.new(File.open("cert.pem"))
-sslContext.key              = OpenSSL::PKey::RSA.new(File.open("key.pem"))
+sslContext.cert             = OpenSSL::X509::Certificate.new(File.open(CERTIFICATE))
+sslContext.key              = OpenSSL::PKey::RSA.new(File.open(PRIVATE_KEY))
 sslContext.verify_mode      = SSL[:SSLVerifyClient]
 sslContext.verify_depth     = SSL[:SSLVerifyDepth]
 sslContext.timeout          = SSL[:SSLTimeout]
@@ -70,7 +76,7 @@ sslContext.min_version      = SSL[:SSLVer] # *IMPORTANT* TLS_1.3
 def close_tun(tun)
         tun.down
         tun.close
-        puts("** #{DEV_NAME} device is closed")
+        puts("** #{DEV_NAME} device is closed") if OPTIONS[:verbose]
         exit 130
 end
 
@@ -91,7 +97,7 @@ def setup_tun()
         tun.addr = DEV_ADDR
         tun.netmask = DEV_NETMASK
         tun.up
-        LOG.info("** #{DEV_NAME} device is up")
+        LOG.info("** #{DEV_NAME} device is up") if OPTIONS[:verbose]
         return tun
 end
 
@@ -102,13 +108,13 @@ def lease_address(client, client_address)
         free_addresses = NETWORK.to_a[2...-1].reject { |x| LEASED_ADDRESSES.include?(x.to_s) }
         random_address = free_addresses.sample.to_s
         LEASED_ADDRESSES.merge!(random_address => client_address)
-        client.puts(random_address + "/" + DEV_NETMASK) # the address is sent in the form of (address/netmask), example -> 192.168.0.10/255.255.255.0
-        LOG.info("** Address #{random_address} is now leased by #{client_address}")
+        client.puts(random_address + "/" + DEV_NETMASK + "/" + PUBLIC_IP) # the address is sent in the form of (address/netmask), example -> 192.168.0.10/255.255.255.0
+        LOG.info("** Address #{random_address} is now leased by #{client_address}") if OPTIONS[:verbose]
 end
 
 def free_address(client_address)
         LEASED_ADDRESSES.delete_if{|k,v| v == client_address}
-        LOG.info("** Deleted #{client_address} record.")
+        LOG.info("** Deleted #{client_address} record.") if OPTIONS[:verbose]
 end
 
 def handle_authentication(client)
@@ -138,8 +144,8 @@ setup_forwarding() # setup the NAT and forwarding
 loop do
         Thread.new(socket.accept) do |connection|
                 begin
-                                connection_address = connection.peeraddr[3]
-                        LOG.info("** New client is connected => #{connection_address}")
+                        connection_address = connection.peeraddr[3]
+                        LOG.info("** New client is connected => #{connection_address}") if OPTIONS[:verbose]
                         tls   = OpenSSL::SSL::SSLSocket.new(connection, sslContext)
                         tls_connection = nil
                         Timeout.timeout(10) do
@@ -159,7 +165,7 @@ loop do
                                 connection.close if connection# close the connection if no ssl handshake was made (state -> PINIT and the TCP connection is still alive)
                         end
                 rescue => e
-                        LOG.info("** Fatal error, closing the connection... #{e}")
+                        LOG.info("** Fatal error, closing the connection... #{e}") if OPTIONS[:verbose]
                         free_address(connection_address) # free up the lease space
                         connection.close if connection# close the connection in case of the disconnect
                         

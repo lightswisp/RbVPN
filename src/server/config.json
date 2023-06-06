@@ -1,5 +1,6 @@
 {
-        "name": "My config",
+        "certificate": "cert.pem",
+        "private_key": "key.pem",
         "network": "192.168.0.0/24",
         "interface": "eth0",
         "tun_interface": "tun0",
