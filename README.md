@@ -7,6 +7,8 @@ It uses tun/tap driver to capture all traffic and tunnel it via secured tunnel.
 
 I used GTK3 for the GUI and rb_tuntap for tun/tap interface manipulation. And a bit of iptables rules for NAT. 
 
+Configs must be stored in json format only! Example configs are already present inside the src/client and src/server
+
 
 ## Demo
 
