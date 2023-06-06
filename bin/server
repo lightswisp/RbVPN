@@ -1,0 +1,4 @@
+#!/usr/bin/bash
+
+ruby ../src/server/server.rb "$@"
+

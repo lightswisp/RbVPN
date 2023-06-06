@@ -19,6 +19,9 @@ Configs must be stored in json format only! Example configs are already present 
 
 - Ruby
 - bundler (gem)
+- build-essential
+- ruby-dev
+
 ## Installation
 
 ### Server
