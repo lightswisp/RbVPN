@@ -54,9 +54,12 @@ class VPNClient
 
   def client_authorize(connection)
     connection.puts("#{@login}:#{@password}") # login and password
-    return false if connection.eof?
-
-    true
+    begin 
+      return false if connection.eof?
+      return true
+	rescue
+      return false
+    end
   end
 
   def lease_address(connection)
@@ -92,7 +95,7 @@ class VPNClient
       return
     end
     authorized = client_authorize(connection)
-    unless authorized
+    if !authorized
       @status.add_status 'Status: Unauthorized, check your credentials!'
       return
     end
