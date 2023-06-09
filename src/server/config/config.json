@@ -1,6 +1,7 @@
 {
         "certificate": "cert.pem",
     	"private_key": "key.pem",
+    	"pem_passphrase": "w00t",
         "network": "192.168.0.0/24",
         "interface": "eth0",
         "tun_interface": "tun0",

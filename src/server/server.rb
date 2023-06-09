@@ -16,7 +16,7 @@ end
 LOG = Logger.new(STDOUT)
 OPTIONS = {}
 REQUIRED_KEYS = %w[certificate private_key network interface tun_interface max_buffer port login
-                   password]
+                   password pem_passphrase]
 
 ARGV << '-h' if ARGV.empty?
 OptionParser.new do |opts|
@@ -54,6 +54,7 @@ PUBLIC_IP = Net::HTTP.get URI 'https://api.ipify.org'
 CERTIFICATE = CONFIG['certificate']
 PRIVATE_KEY = CONFIG['private_key']
 PORT = CONFIG['port']
+PEM_PASSPHRASE = CONFIG['pem_passphrase']
 MAX_BUFFER = CONFIG['max_buffer']
 DEV_MAIN_INTERFACE = CONFIG['interface']
 DEV_NAME = CONFIG['tun_interface']
@@ -72,7 +73,7 @@ SSL = {
 
 SSL_CONTEXT = OpenSSL::SSL::SSLContext.new
 SSL_CONTEXT.cert             = OpenSSL::X509::Certificate.new(File.open(CERTIFICATE))
-SSL_CONTEXT.key              = OpenSSL::PKey::RSA.new(File.open(PRIVATE_KEY))
+SSL_CONTEXT.key              = OpenSSL::PKey::RSA.new(File.open(PRIVATE_KEY), PEM_PASSPHRASE)
 SSL_CONTEXT.verify_mode      = SSL[:SSLVerifyClient]
 SSL_CONTEXT.verify_depth     = SSL[:SSLVerifyDepth]
 SSL_CONTEXT.timeout          = SSL[:SSLTimeout]
