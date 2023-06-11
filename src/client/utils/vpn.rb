@@ -17,6 +17,8 @@ class VPNClient
     @sni_host = config['sni_host']
     @login = config['login']
     @password = config['password']
+    @default_dns = File.read('/etc/resolv.conf')
+    @default_dns_new = config['dns_servers']
     @connected = false
     @tun = nil
   end
@@ -62,6 +64,17 @@ class VPNClient
     end
   end
 
+  def set_dns()
+	settings = @default_dns_new.map{|dns| "nameserver #{dns}"}.join("\n")
+	File.write('/etc/resolv.conf', settings)
+	@status.add_status "Status: New DNS is set: #{@default_dns_new.first}"
+  end
+
+  def reset_dns()
+	File.write('/etc/resolv.conf', @default_dns)
+	@status.add_status "Status: DNS settings are restored"
+  end
+
   def lease_address(connection)
     addr = connection.gets.chomp
     dev_addr, dev_netmask, public_ip = addr.split('/')
@@ -103,6 +116,7 @@ class VPNClient
     dev_addr, dev_netmask, public_ip = lease_address(connection)
     @tun = setup_tun(dev_addr, dev_netmask)
     setup_routes(dev_addr)
+    set_dns() # set new dns settings
     @connected = true
     @status.add_status "Status: Connected\nPublic IP: #{public_ip}"
 
@@ -135,6 +149,7 @@ class VPNClient
       @tun.close
     end
     restore_routes if @tun.closed?
+    reset_dns() # reset dns settings
     @status.add_status 'Status: Disconnected'
   end
 end

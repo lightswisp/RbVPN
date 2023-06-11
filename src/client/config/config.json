@@ -1,5 +1,5 @@
 {
-        "name": "My config",
+        "dns_servers": ["94.140.14.14", "94.140.15.15"],
         "interface": "wlan0",
         "tun_interface": "tun0",
         "max_buffer": 655360,
@@ -7,6 +7,6 @@
         "sni_host": "example.com",
         "port": 9578,
         "login": "ryuk",
-        "password": "qwerty123"
+        "password": "wh@t_w11l_h@ppeN_1f_th1s_d1E$"
 
 }

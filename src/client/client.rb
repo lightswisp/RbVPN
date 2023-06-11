@@ -11,7 +11,7 @@ require 'net/http'
 require_relative 'utils/vpn'
 require_relative 'utils/status'
 
-REQUIRED_KEYS = %w[interface tun_interface max_buffer ip sni_host port login password]
+REQUIRED_KEYS = %w[dns_servers interface tun_interface max_buffer ip sni_host port login password]
 
 client = nil
 config_json = nil
@@ -47,7 +47,7 @@ switch.signal_connect('state-set') do |_widget, state|
     if config_json
       config_diff = REQUIRED_KEYS - config_json.keys
       if config_diff.empty?
-        client = VPNClient.new(config_json, status_manager) # Client init
+        client ||= VPNClient.new(config_json, status_manager) # Client init
         client.connect # client connect
         puts 'On'
       else
