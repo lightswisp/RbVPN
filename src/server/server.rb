@@ -9,7 +9,7 @@ require 'optparse'
 require 'net/http'
 
 if Process.uid != 0
-  puts '** Please run the client as a root user!'
+  puts '** Please run the server as a root user!'
   exit 130
 end
 
